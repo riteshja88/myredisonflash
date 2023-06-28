@@ -7,6 +7,10 @@ import "time"
 import "sync"
 import "hash/crc32"
 import "math/rand"
+import "net/http"
+import "io/ioutil"
+import "net/url"
+import "strconv"
 
 const (
   // IEEE is by far and away the most common CRC-32 polynomial.
@@ -91,14 +95,14 @@ func (k Store) StopStoreDiskFlusher() {
 }
 
 func StoreExpiredEvictor(k *Store) {
-	ticker := time.NewTicker(1000 * time.Millisecond)
+	//ticker := time.NewTicker(1000 * time.Millisecond)
 	for {
 		select {
 		case <-k.doneStoreExpiredEvictor:
 			fmt.Println("StoreExpiredEvictor stopped.");
 			return
-		case t := <-ticker.C:
-			fmt.Println("Eviction triggered at", t)
+		//case t := <-ticker.C:
+			//fmt.Println("Eviction triggered at", t)
 		}
 	}
 }
@@ -139,8 +143,10 @@ func (k Store) Get(key string) *TimeSeriesRecord {
 	return &retTimeSeriesRecord
 }
 
+const CURRENT_TIMESTAMP = 0
+
 func GetEpochTimestampHour(timestamp uint64) uint64 {
-	if 0 == timestamp {
+	if CURRENT_TIMESTAMP == timestamp {
 		timestamp = uint64(time.Now().Unix()) // epoch
 	}
 	return uint64(timestamp/SECONDS_IN_HOUR)*SECONDS_IN_HOUR  // closest past hour near timestamp
@@ -261,18 +267,18 @@ func test(KVStore *Store) {
 	for i = 0; i < 24*7; i++ {
 		KVStore.Put("ritesh2",1679295600+i*3600,100+i)
 		//KVStore.Put("ritesh2",1679900400+i*3600,100+i)
-		//KVStore.Put("ritesh2",GetEpochTimestampHour(0)+i*3600,100+i)
+		//KVStore.Put("ritesh2",GetEpochTimestampHour(CURRENT_TIMESTAMP)+i*3600,100+i)
 	}
 	fmt.Println("checkpoint")
 	for i = 0; i < 24*7; i++ {
 		//KVStore.Put("ritesh2",1679295600+i*3600,100+i)
 		KVStore.Put("ritesh2",1679900400+i*3600,100+i)
-		//KVStore.Put("ritesh2",GetEpochTimestampHour(0)+i*3600,100+i)
+		//KVStore.Put("ritesh2",GetEpochTimestampHour(CURRENT_TIMESTAMP)+i*3600,100+i)
 	}
 	for i = 0; i < 24*7; i++ {
 		//KVStore.Put("ritesh2",1679295600+i*3600,100+i)
 		//KVStore.Put("ritesh2",1679900400+i*3600,100+i)
-		KVStore.Put("ritesh2",GetEpochTimestampHour(0)+i*3600,100+i)
+		KVStore.Put("ritesh2",GetEpochTimestampHour(CURRENT_TIMESTAMP)+i*3600,100+i)
 	}
 
 	fmt.Println(KVStore.Get("ritesh2"))
@@ -287,13 +293,48 @@ func test(KVStore *Store) {
 	time.Sleep(3 * time.Second)
 }
 
+func handleSubmitStat(w http.ResponseWriter, r *http.Request) {
+	postData, _ := ioutil.ReadAll(r.Body)
+	queryParams, _ := url.ParseQuery(string(postData))
+	fmt.Println(queryParams)
+
+	stat := queryParams["stat"]
+	if stat == nil ||
+		len(stat[0]) == 0 {
+		w.WriteHeader(http.StatusBadRequest) // BadRequest
+		return
+	}
+
+	value := queryParams["value"]
+	if value == nil ||
+		len(value[0]) == 0 {
+		w.WriteHeader(http.StatusBadRequest) // BadRequest
+		return
+	}
+
+	value_uint64, value_err := strconv.ParseUint(value[0], 10, 64)
+	if value_err != nil {
+		w.WriteHeader(http.StatusBadRequest) // BadRequest
+		return
+	}
+
+	KVStore.Create(stat[0], CURRENT_TIMESTAMP)
+	KVStore.Put(stat[0], CURRENT_TIMESTAMP, value_uint64)
+	w.WriteHeader(http.StatusNoContent) //GoodRequest
+}
+
+var KVStore *Store
 func main() {
-	KVStore := NewStore("/tmp/data1","/tmp/keys/") // echo "" > /tmp/data1; mkdir -p "/tmp/keys/";
+	KVStore = NewStore("/tmp/data1","/tmp/keys/") // echo "" > /tmp/data1; mkdir -p "/tmp/keys/";
 	//KVStore.Restore()
 	KVStore.StartStoreExpiredEvictor()
 	KVStore.StartStoreDiskFlusher()
 
-	test(KVStore)
+	//test(KVStore)
+
+	http.HandleFunc("/submitstat", handleSubmitStat)
+	http.ListenAndServe(":3333", nil)
+
 
 	KVStore.Backup()
 	KVStore.StopStoreExpiredEvictor()
