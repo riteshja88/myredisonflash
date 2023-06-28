@@ -11,6 +11,7 @@ import "net/http"
 import "io/ioutil"
 import "net/url"
 import "strconv"
+import "bufio"
 
 const (
   // IEEE is by far and away the most common CRC-32 polynomial.
@@ -127,6 +128,11 @@ func (k Store) StopStoreExpiredEvictor() {
 	k.doneStoreExpiredEvictor <- true
 }
 
+func mallocTimeSeriesRecord() *TimeSeriesRecord{
+	var t TimeSeriesRecord
+	return &t
+}
+
 func (k Store) Get(key string) *TimeSeriesRecord {
 	k.BigLock.RLock()
 	var timeSeriesRecordPtr *TimeSeriesRecord
@@ -135,12 +141,65 @@ func (k Store) Get(key string) *TimeSeriesRecord {
 		k.BigLock.RUnlock()
 		return nil
 	}
-	var retTimeSeriesRecord TimeSeriesRecord
+	var RAMTimeSeriesRecord TimeSeriesRecord
 	timeSeriesRecordPtr.rwLock.RLock()
-	retTimeSeriesRecord = *timeSeriesRecordPtr
+	RAMTimeSeriesRecord = *timeSeriesRecordPtr
+	curr := &RAMTimeSeriesRecord
+	next := curr.Next
+	for next != nil {
+		nextTimeSeriesRecord := mallocTimeSeriesRecord()
+		*nextTimeSeriesRecord = *next
+		curr.Next = nextTimeSeriesRecord
+		curr = curr.Next
+		next = curr.Next
+	}
+	firstDiskTimeSeriesRecord, lastDiskTimeSeriesRecord := k.GetFromDisk(key)
 	timeSeriesRecordPtr.rwLock.RUnlock()
 	k.BigLock.RUnlock()
-	return &retTimeSeriesRecord
+	if nil != lastDiskTimeSeriesRecord {
+		lastDiskTimeSeriesRecord.Next = &RAMTimeSeriesRecord
+		return firstDiskTimeSeriesRecord
+	} else {
+		return &RAMTimeSeriesRecord
+	}
+}
+
+// Readln returns a single line (without the ending \n)
+// from the input buffered reader.
+// An error is returned iff there is an error with the
+// buffered reader.
+func Readln(r *bufio.Reader) (string, error) {
+  var (isPrefix bool = true
+       err error = nil
+       line, ln []byte
+      )
+  for isPrefix && err == nil {
+      line, isPrefix, err = r.ReadLine()
+      ln = append(ln, line...)
+  }
+  return string(ln),err
+}
+
+func (k Store) GetFromDisk(key string) (firstDiskTimeSeriesRecord *TimeSeriesRecord, lastDiskTimeSeriesRecord *TimeSeriesRecord) {
+	f, err := os.Open(k.directoryname + key)
+	if err != nil {
+		return nil, nil
+	}
+	r := bufio.NewReader(f)
+	json_line, e := Readln(r)
+	if e == nil {
+		firstDiskTimeSeriesRecord = mallocTimeSeriesRecord()
+		lastDiskTimeSeriesRecord = firstDiskTimeSeriesRecord
+		json.Unmarshal([]byte(json_line), firstDiskTimeSeriesRecord)
+		json_line, e = Readln(r)
+	}
+	for e == nil {
+		lastDiskTimeSeriesRecord.Next = mallocTimeSeriesRecord()
+		lastDiskTimeSeriesRecord = lastDiskTimeSeriesRecord.Next
+		json.Unmarshal([]byte(json_line), lastDiskTimeSeriesRecord)
+		json_line, e = Readln(r)
+	}
+	return firstDiskTimeSeriesRecord, lastDiskTimeSeriesRecord
 }
 
 const CURRENT_TIMESTAMP = 0
@@ -242,6 +301,10 @@ func (k Store) Backup() {
 	k.BigLock.Unlock()
 }
 
+func mallocRwLock() *sync.RWMutex {
+	var rwLock sync.RWMutex
+	return &rwLock
+}
 func (k Store) Restore() { /* should be fired only during startup (before anything else) */
 	k.BigLock.Lock()
 	file, _ := os.Open(k.filename)
@@ -250,6 +313,9 @@ func (k Store) Restore() { /* should be fired only during startup (before anythi
 	file.Read(mapJSON)
 	json.Unmarshal(mapJSON, &k.db)
 	file.Close()
+	for _, value := range k.db {
+		value.rwLock = mallocRwLock()
+	}
 	k.BigLock.Unlock()
 }
 
@@ -326,19 +392,22 @@ func handleSubmitStat(w http.ResponseWriter, r *http.Request) {
 var KVStore *Store
 func main() {
 	KVStore = NewStore("/tmp/data1","/tmp/keys/") // echo "" > /tmp/data1; mkdir -p "/tmp/keys/";
+	KVStore.Restore()
+	//KVStore.Backup()
 	//KVStore.Restore()
 	KVStore.StartStoreExpiredEvictor()
 	KVStore.StartStoreDiskFlusher()
 
 	//test(KVStore)
+	t := KVStore.Get("ritesh2")
+	tJSON, _ := json.Marshal(t)
+	fmt.Println(string(tJSON))
 
-	http.HandleFunc("/submitstat", handleSubmitStat)
-	http.ListenAndServe(":3333", nil)
-
-
-	KVStore.Backup()
+	//http.HandleFunc("/submitstat", handleSubmitStat)
+	//http.ListenAndServe(":3333", nil)
 	KVStore.StopStoreExpiredEvictor()
 	KVStore.StopStoreDiskFlusher()
+	KVStore.Backup()
 	fmt.Println("Waiting")
 	time.Sleep(3 * time.Second)
 }
