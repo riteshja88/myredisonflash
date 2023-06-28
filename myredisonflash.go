@@ -6,6 +6,7 @@ import "os"
 import "time"
 import "sync"
 import "hash/crc32"
+import "math/rand"
 
 const (
   // IEEE is by far and away the most common CRC-32 polynomial.
@@ -205,7 +206,8 @@ func (k Store) Put(key string, timestamp uint64, value uint64) bool {
 func (k Store) Create(key string, timestamp uint64) {
 	k.BigLock.RLock()
 	var newTimeSeriesRecord TimeSeriesRecord
-	newTimeSeriesRecord.StartTimestampHour = GetEpochTimestampHour(timestamp)
+	newTimeSeriesRecord.StartTimestampHour = GetEpochTimestampHour(timestamp - rand.Uint64()  % (DAYS * HOURS * SECONDS_IN_HOUR))
+	//newTimeSeriesRecord.StartTimestampHour = GetEpochTimestampHour(timestamp)
 	var rwLock sync.RWMutex
 	newTimeSeriesRecord.rwLock = &rwLock
 	var key_crc32 uint32
@@ -246,39 +248,39 @@ func (k Store) Restore() { /* should be fired only during startup (before anythi
 }
 
 func test(KVStore *Store) {
-		fmt.Println(KVStore.Get("ritesh2"))
-	KVStore.Create("ritesh2",3600)
+	fmt.Println(KVStore.Get("ritesh2"))
+	KVStore.Create("ritesh2",1679295600)
 	//fmt.Println(KVStore.Get("ritesh2"))
-	//KVStore.Create("ritesh2",3600)
+	//KVStore.Create("ritesh2",1679295600)
 	//fmt.Println(KVStore.Get("ritesh2"))
-	//KVStore.Put("ritesh2",3600,101)
-	//KVStore.Put("ritesh2",6084000,101)
+	//KVStore.Put("ritesh2",1679295600,101)
+	//KVStore.Put("ritesh2",1679900400,101)
 	fmt.Println(KVStore.Get("ritesh2"))
 
 	var i uint64
 	for i = 0; i < 24*7; i++ {
-		KVStore.Put("ritesh2",3600+i*3600,100+i)
-		//KVStore.Put("ritesh2",6084000+i*3600,100+i)
+		KVStore.Put("ritesh2",1679295600+i*3600,100+i)
+		//KVStore.Put("ritesh2",1679900400+i*3600,100+i)
 		//KVStore.Put("ritesh2",GetEpochTimestampHour(0)+i*3600,100+i)
 	}
 	fmt.Println("checkpoint")
 	for i = 0; i < 24*7; i++ {
-		//KVStore.Put("ritesh2",3600+i*3600,100+i)
-		KVStore.Put("ritesh2",6084000+i*3600,100+i)
+		//KVStore.Put("ritesh2",1679295600+i*3600,100+i)
+		KVStore.Put("ritesh2",1679900400+i*3600,100+i)
 		//KVStore.Put("ritesh2",GetEpochTimestampHour(0)+i*3600,100+i)
 	}
 	for i = 0; i < 24*7; i++ {
-		//KVStore.Put("ritesh2",3600+i*3600,100+i)
-		//KVStore.Put("ritesh2",6084000+i*3600,100+i)
+		//KVStore.Put("ritesh2",1679295600+i*3600,100+i)
+		//KVStore.Put("ritesh2",1679900400+i*3600,100+i)
 		KVStore.Put("ritesh2",GetEpochTimestampHour(0)+i*3600,100+i)
 	}
 
 	fmt.Println(KVStore.Get("ritesh2"))
 	fmt.Println(KVStore.Get("ritesh3"))
 
-	KVStore.Create("ritesh3",3600)
-	KVStore.Put("ritesh3",3600,101)
-	KVStore.Put("ritesh3",6084000,101)
+	KVStore.Create("ritesh3",1679295600)
+	KVStore.Put("ritesh3",1679295600,101)
+	KVStore.Put("ritesh3",1679900400,101)
 	//KVStore.Delete("ritesh3")
 
 	fmt.Println("going to sleep")
