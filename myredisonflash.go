@@ -133,6 +133,67 @@ func mallocTimeSeriesRecord() *TimeSeriesRecord{
 	return &t
 }
 
+type TimeSeriesResponse struct {
+	Key *string
+	Timestamp uint64
+	Value uint64
+}
+
+func (k Store) GetRange(key string, startTimestamp uint64, endTimestamp uint64) []TimeSeriesResponse {
+	timeSeriesRecord := k.Get(key)
+	if nil == timeSeriesRecord {
+		return nil /* key not present */
+	}
+	startTimestampHour := GetEpochTimestampHour(startTimestamp)
+	endTimestampHour := GetEpochTimestampHour(endTimestamp)
+
+	if endTimestampHour <= timeSeriesRecord.StartTimestampHour {
+		return nil /* no data for that much past */
+	}
+
+	countHours := ((endTimestampHour-startTimestampHour)/SECONDS_IN_HOUR) + 1
+	retTimeSeriesResponse := make([]TimeSeriesResponse, countHours, countHours)
+	currTimestampHour := startTimestampHour
+	for idx, _ := range retTimeSeriesResponse {
+		retTimeSeriesResponse[idx].Key = &key
+		retTimeSeriesResponse[idx].Timestamp = currTimestampHour
+		currTimestampHour += SECONDS_IN_HOUR
+	}
+
+	curr := timeSeriesRecord
+	for curr != nil {
+		curr_endTimestampHour := (curr.StartTimestampHour + ((DAYS * HOURS) - 1 ) * SECONDS_IN_HOUR)
+		if startTimestampHour >= curr.StartTimestampHour &&
+			startTimestampHour <= curr_endTimestampHour {
+			break
+		}
+		curr = curr.Next
+	}
+
+	if curr == nil {
+		return retTimeSeriesResponse
+	}
+	first := curr
+
+	for curr != nil {
+		curr_endTimestampHour := (curr.StartTimestampHour + ((DAYS * HOURS) - 1 ) * SECONDS_IN_HOUR)
+		if endTimestampHour >= curr.StartTimestampHour &&
+			endTimestampHour <= curr_endTimestampHour {
+			break
+		}
+		curr = curr.Next
+	}
+
+	last := curr
+
+	curr = first
+	for curr != nil {
+		curr = curr.Next
+	}
+
+	return retTimeSeriesResponse
+}
+
 func (k Store) Get(key string) *TimeSeriesRecord {
 	k.BigLock.RLock()
 	var timeSeriesRecordPtr *TimeSeriesRecord
@@ -235,8 +296,8 @@ func (k Store) Put(key string, timestamp uint64, value uint64) bool {
 		if curr == nil {
 			break
 		}
-		endTimeStampHour := (curr.StartTimestampHour + DAYS * HOURS * SECONDS_IN_HOUR) - 1
-		if timestampHour < endTimeStampHour {
+		endTimestampHour := (curr.StartTimestampHour + ((DAYS * HOURS) - 1 ) * SECONDS_IN_HOUR)
+		if timestampHour <= endTimestampHour {
 			break
 		}
 		prev = curr
@@ -399,9 +460,11 @@ func main() {
 	KVStore.StartStoreDiskFlusher()
 
 	//test(KVStore)
-	t := KVStore.Get("ritesh2")
-	tJSON, _ := json.Marshal(t)
-	fmt.Println(string(tJSON))
+	//t := KVStore.Get("ritesh2")
+	//tJSON, _ := json.Marshal(t)
+	//fmt.Println(string(tJSON))
+
+	fmt.Println(KVStore.GetRange("ritesh2",3600,7200))
 
 	//http.HandleFunc("/submitstat", handleSubmitStat)
 	//http.ListenAndServe(":3333", nil)
