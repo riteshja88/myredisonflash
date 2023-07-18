@@ -457,6 +457,35 @@ func handleSubmitStat(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent) //GoodRequest
 }
 
+func handleSubmitStat2(w http.ResponseWriter, r *http.Request) {
+	postData, _ := ioutil.ReadAll(r.Body)
+	queryParams, _ := url.ParseQuery(string(postData))
+	fmt.Println(queryParams)
+
+	stat := queryParams["stat"]
+	if stat == nil ||
+		len(stat[0]) == 0 {
+		w.WriteHeader(http.StatusBadRequest) // BadRequest
+		return
+	}
+
+	value := queryParams["value"]
+	if value == nil ||
+		len(value[0]) == 0 {
+		w.WriteHeader(http.StatusBadRequest) // BadRequest
+		return
+	}
+
+	value_uint64, value_err := strconv.ParseUint(value[0], 10, 64)
+	if value_err != nil {
+		w.WriteHeader(http.StatusBadRequest) // BadRequest
+		return
+	}
+
+	KVStore.Put(stat[0], CURRENT_TIMESTAMP, value_uint64)
+	w.WriteHeader(http.StatusNoContent) //GoodRequest
+}
+
 func handleBackup(w http.ResponseWriter, r *http.Request) {
 	KVStore.Backup()
 	w.WriteHeader(http.StatusNoContent) //GoodRequest
@@ -478,6 +507,7 @@ func main() {
 	//fmt.Println(KVStore.GetRange("ritesh2",3600,7200))
 
 	http.HandleFunc("/submitstat", handleSubmitStat)
+	http.HandleFunc("/submitstat2", handleSubmitStat2)
 	http.HandleFunc("/backup", handleBackup)
 	http.ListenAndServe(":3333", nil)
 	//KVStore.StopStoreExpiredEvictor()
