@@ -346,8 +346,8 @@ func (k Store) Create(key string, timestamp uint64) {
 	var key_crc32 uint32
 	key_crc32 = crc32.Checksum([]byte(key), k.crc32_table)
 	k.createMutexes[key_crc32 % CREATE_MUTEXES].Lock()
-	_, ok := k.db.Load(key)
-	if true != ok { /* create timeseries (if not present) */
+	x, _  := k.db.Load(key)
+	if nil == x { /* create timeseries (if not present) */
 		k.db.Store(key, &newTimeSeriesRecord)
 	}
 	k.createMutexes[key_crc32 % CREATE_MUTEXES].Unlock()
