@@ -46,10 +46,10 @@ func StoreDiskFlusher(k *Store) {
 			k.BigLock.RLock()
 			var timeSeriesRecordPtr *TimeSeriesRecord
 			x, _ := k.db.Load(keyToFlush)
-			timeSeriesRecordPtr = x.(*TimeSeriesRecord)
-			if nil == timeSeriesRecordPtr {
+			if nil == x {
 				//Fatal
 			} else {
+				timeSeriesRecordPtr = x.(*TimeSeriesRecord)
 				timeSeriesRecordPtr.rwLock.Lock()
 				if timeSeriesRecordPtr.Next == nil {
 					//Fatal
@@ -77,7 +77,7 @@ func StoreDiskFlusher(k *Store) {
 
 func (k *Store) StartStoreDiskFlusher() {
 	k.doneStoreDiskFlusher = make(chan bool)
-	k.queueStoreDiskFlusher = make(chan string, 1000*1000)
+	k.queueStoreDiskFlusher = make(chan string, 1000 * 1000)
 	go StoreDiskFlusher(k)
 	fmt.Println("StoreDiskFlusher started...");
 }
@@ -192,11 +192,11 @@ func (k *Store) Get(key string) *TimeSeriesRecord {
 	k.BigLock.RLock()
 	var timeSeriesRecordPtr *TimeSeriesRecord
 	x, _ := k.db.Load(key)
-	timeSeriesRecordPtr = x.(*TimeSeriesRecord)
-	if nil == timeSeriesRecordPtr {
+	if nil == x {
 		k.BigLock.RUnlock()
 		return nil
 	}
+	timeSeriesRecordPtr = x.(*TimeSeriesRecord)
 	var RAMTimeSeriesRecord TimeSeriesRecord
 	timeSeriesRecordPtr.rwLock.RLock()
 	RAMTimeSeriesRecord = *timeSeriesRecordPtr
@@ -288,10 +288,7 @@ func (k *Store) Put(key string, timestamp uint64, value uint64) bool {
 	var curr *TimeSeriesRecord
 	var prev *TimeSeriesRecord
 	curr = timeSeriesRecordPtr
-	for {
-		if curr == nil {
-			break
-		}
+	for curr != nil {
 		endTimestampHour := (curr.StartTimestampHour + ((DAYS * HOURS) - 1 ) * SECONDS_IN_HOUR)
 		if timestampHour <= endTimestampHour {
 			break
@@ -447,35 +444,6 @@ func handleSubmitStat(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent) //GoodRequest
 }
 
-func handleSubmitStat2(w http.ResponseWriter, r *http.Request) {
-	postData, _ := ioutil.ReadAll(r.Body)
-	queryParams, _ := url.ParseQuery(string(postData))
-	fmt.Println(queryParams)
-
-	stat := queryParams["stat"]
-	if stat == nil ||
-		len(stat[0]) == 0 {
-		w.WriteHeader(http.StatusBadRequest) // BadRequest
-		return
-	}
-
-	value := queryParams["value"]
-	if value == nil ||
-		len(value[0]) == 0 {
-		w.WriteHeader(http.StatusBadRequest) // BadRequest
-		return
-	}
-
-	value_uint64, value_err := strconv.ParseUint(value[0], 10, 64)
-	if value_err != nil {
-		w.WriteHeader(http.StatusBadRequest) // BadRequest
-		return
-	}
-
-	KVStore.Put(stat[0], CURRENT_TIMESTAMP, value_uint64)
-	w.WriteHeader(http.StatusNoContent) //GoodRequest
-}
-
 func handleBackup(w http.ResponseWriter, r *http.Request) {
 	KVStore.Backup()
 	w.WriteHeader(http.StatusNoContent) //GoodRequest
@@ -497,7 +465,6 @@ func main() {
 	//fmt.Println(KVStore.GetRange("ritesh2",3600,7200))
 
 	http.HandleFunc("/submitstat", handleSubmitStat)
-	http.HandleFunc("/submitstat2", handleSubmitStat2)
 	http.HandleFunc("/backup", handleBackup)
 	http.ListenAndServe(":3333", nil)
 	//KVStore.StopStoreExpiredEvictor()
