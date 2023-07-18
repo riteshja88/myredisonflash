@@ -6,7 +6,7 @@ import "os"
 import "time"
 import "sync"
 import "hash/crc32"
-import "math/rand"
+//import "math/rand"
 import "net/http"
 import "io/ioutil"
 import "net/url"
@@ -139,6 +139,7 @@ type TimeSeriesResponse struct {
 	Value uint64
 }
 
+
 func (k Store) GetRange(key string, startTimestamp uint64, endTimestamp uint64) []TimeSeriesResponse {
 	timeSeriesRecord := k.Get(key)
 	if nil == timeSeriesRecord {
@@ -184,7 +185,7 @@ func (k Store) GetRange(key string, startTimestamp uint64, endTimestamp uint64) 
 		curr = curr.Next
 	}
 
-	last := curr
+	//last := curr
 
 	curr = first
 	for curr != nil {
@@ -193,6 +194,7 @@ func (k Store) GetRange(key string, startTimestamp uint64, endTimestamp uint64) 
 
 	return retTimeSeriesResponse
 }
+
 
 func (k Store) Get(key string) *TimeSeriesRecord {
 	k.BigLock.RLock()
@@ -332,8 +334,8 @@ func (k Store) Put(key string, timestamp uint64, value uint64) bool {
 func (k Store) Create(key string, timestamp uint64) {
 	k.BigLock.RLock()
 	var newTimeSeriesRecord TimeSeriesRecord
-	newTimeSeriesRecord.StartTimestampHour = GetEpochTimestampHour(timestamp - rand.Uint64()  % (DAYS * HOURS * SECONDS_IN_HOUR))
-	//newTimeSeriesRecord.StartTimestampHour = GetEpochTimestampHour(timestamp)
+	//newTimeSeriesRecord.StartTimestampHour = GetEpochTimestampHour(timestamp) - (rand.Uint64()  % (DAYS * HOURS * SECONDS_IN_HOUR))
+	newTimeSeriesRecord.StartTimestampHour = GetEpochTimestampHour(timestamp)
 	var rwLock sync.RWMutex
 	newTimeSeriesRecord.rwLock = &rwLock
 	var key_crc32 uint32
@@ -450,27 +452,32 @@ func handleSubmitStat(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent) //GoodRequest
 }
 
+func handleBackup(w http.ResponseWriter, r *http.Request) {
+	KVStore.Backup()
+	w.WriteHeader(http.StatusNoContent) //GoodRequest
+}
+
 var KVStore *Store
+
 func main() {
 	KVStore = NewStore("/tmp/data1","/tmp/keys/") // echo "" > /tmp/data1; mkdir -p "/tmp/keys/";
-	KVStore.Restore()
-	//KVStore.Backup()
 	//KVStore.Restore()
-	KVStore.StartStoreExpiredEvictor()
-	KVStore.StartStoreDiskFlusher()
+	//KVStore.StartStoreExpiredEvictor()
+	//KVStore.StartStoreDiskFlusher()
 
 	//test(KVStore)
 	//t := KVStore.Get("ritesh2")
 	//tJSON, _ := json.Marshal(t)
 	//fmt.Println(string(tJSON))
 
-	fmt.Println(KVStore.GetRange("ritesh2",3600,7200))
+	//fmt.Println(KVStore.GetRange("ritesh2",3600,7200))
 
-	//http.HandleFunc("/submitstat", handleSubmitStat)
-	//http.ListenAndServe(":3333", nil)
-	KVStore.StopStoreExpiredEvictor()
-	KVStore.StopStoreDiskFlusher()
-	KVStore.Backup()
+	http.HandleFunc("/submitstat", handleSubmitStat)
+	http.HandleFunc("/backup", handleBackup)
+	http.ListenAndServe(":3333", nil)
+	//KVStore.StopStoreExpiredEvictor()
+	//KVStore.StopStoreDiskFlusher()
+	//KVStore.Backup()
 	fmt.Println("Waiting")
 	time.Sleep(3 * time.Second)
 }
