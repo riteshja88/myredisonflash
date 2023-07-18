@@ -93,7 +93,7 @@ func (k *Store) StartStoreDiskFlusher() {
 	fmt.Println("StoreDiskFlusher started...");
 }
 
-func (k Store) StopStoreDiskFlusher() {
+func (k *Store) StopStoreDiskFlusher() {
 	k.doneStoreDiskFlusher <- true
 }
 
@@ -126,7 +126,7 @@ func (k *Store) StartStoreExpiredEvictor() {
 	fmt.Println("StoreExpiredEvictor started...");
 }
 
-func (k Store) StopStoreExpiredEvictor() {
+func (k *Store) StopStoreExpiredEvictor() {
 	k.doneStoreExpiredEvictor <- true
 }
 
@@ -142,7 +142,7 @@ type TimeSeriesResponse struct {
 }
 
 
-func (k Store) GetRange(key string, startTimestamp uint64, endTimestamp uint64) []TimeSeriesResponse {
+func (k *Store) GetRange(key string, startTimestamp uint64, endTimestamp uint64) []TimeSeriesResponse {
 	timeSeriesRecord := k.Get(key)
 	if nil == timeSeriesRecord {
 		return nil /* key not present */
@@ -198,7 +198,7 @@ func (k Store) GetRange(key string, startTimestamp uint64, endTimestamp uint64) 
 }
 
 
-func (k Store) Get(key string) *TimeSeriesRecord {
+func (k *Store) Get(key string) *TimeSeriesRecord {
 	k.BigLock.RLock()
 	var timeSeriesRecordPtr *TimeSeriesRecord
 	x, _ := k.db.Load(key)
@@ -246,7 +246,7 @@ func Readln(r *bufio.Reader) (string, error) {
   return string(ln),err
 }
 
-func (k Store) GetFromDisk(key string) (firstDiskTimeSeriesRecord *TimeSeriesRecord, lastDiskTimeSeriesRecord *TimeSeriesRecord) {
+func (k *Store) GetFromDisk(key string) (firstDiskTimeSeriesRecord *TimeSeriesRecord, lastDiskTimeSeriesRecord *TimeSeriesRecord) {
 	f, err := os.Open(k.directoryname + key)
 	if err != nil {
 		return nil, nil
@@ -278,16 +278,15 @@ func GetEpochTimestampHour(timestamp uint64) uint64 {
 }
 
 
-func (k Store) Put(key string, timestamp uint64, value uint64) bool {
+func (k *Store) Put(key string, timestamp uint64, value uint64) bool {
 	k.BigLock.RLock()
 	var timeSeriesRecordPtr *TimeSeriesRecord
 	x, _ := k.db.Load(key)
-	timeSeriesRecordPtr = x.(*TimeSeriesRecord)
-
-	if nil == timeSeriesRecordPtr {
+	if nil == x {
 		k.BigLock.RUnlock()
 		return false // please do Create() before doing Put()
 	}
+	timeSeriesRecordPtr = x.(*TimeSeriesRecord)
 	var timestampHour = GetEpochTimestampHour(timestamp)
 	timeSeriesRecordPtr.rwLock.Lock()
 	if timestampHour < timeSeriesRecordPtr.StartTimestampHour {
@@ -336,34 +335,32 @@ func (k Store) Put(key string, timestamp uint64, value uint64) bool {
 	return true
 }
 
-func (k Store) Create(key string, timestamp uint64) {
+func (k *Store) Create(key string, timestamp uint64) {
 	k.BigLock.RLock()
 	var newTimeSeriesRecord TimeSeriesRecord
 	//newTimeSeriesRecord.StartTimestampHour = GetEpochTimestampHour(timestamp) - (rand.Uint64()  % (DAYS * HOURS * SECONDS_IN_HOUR))
 	newTimeSeriesRecord.StartTimestampHour = GetEpochTimestampHour(timestamp)
 	var rwLock sync.RWMutex
 	newTimeSeriesRecord.rwLock = &rwLock
-	var key_crc32 uint32
-	key_crc32 = crc32.Checksum([]byte(key), k.crc32_table)
-	k.createMutexes[key_crc32 % CREATE_MUTEXES].Lock()
-	x, _  := k.db.Load(key)
-	if nil == x { /* create timeseries (if not present) */
-		k.db.Store(key, &newTimeSeriesRecord)
-	}
-	k.createMutexes[key_crc32 % CREATE_MUTEXES].Unlock()
+	k.db.LoadOrStore(key, &newTimeSeriesRecord) /* create timeseries (if not present) */
 	k.BigLock.RUnlock()
 }
 
-func (k Store) Delete(key string) {
+func (k *Store) Delete(key string) {
 	k.BigLock.RLock()
 	k.db.Delete(key)
 	os.Remove(k.directoryname + key)
 	k.BigLock.RUnlock()
 }
 
-func (k Store) Backup() {
+func (k *Store) Backup() {
 	k.BigLock.Lock()
-	mapJSON, _ := json.Marshal(k.db)
+	k_db_map := make(map[string]*TimeSeriesRecord)
+	k.db.Range(func( k interface{}, v interface{}) bool {
+		k_db_map[k.(string)] = v.(*TimeSeriesRecord)
+		return true
+	})
+	mapJSON, _ := json.Marshal(k_db_map)
 	file, _ := os.Create(k.filename)
 	file.Write(mapJSON)
 	file.Close()
@@ -374,19 +371,19 @@ func mallocRwLock() *sync.RWMutex {
 	var rwLock sync.RWMutex
 	return &rwLock
 }
-func (k Store) Restore() { /* should be fired only during startup (before anything else) */
+func (k *Store) Restore() { /* should be fired only during startup (before anything else) */
 	k.BigLock.Lock()
 	file, _ := os.Open(k.filename)
 	fileinfo, _ := file.Stat()
 	mapJSON := make([]byte, fileinfo.Size())
 	file.Read(mapJSON)
-	json.Unmarshal(mapJSON, &k.db)
+	k_db_map := make(map[string]*TimeSeriesRecord)
+	json.Unmarshal(mapJSON, &k_db_map)
 	file.Close()
-	/* todo fix, see how to interate in sync.map
-	for _, value := range k.db {
+	for key, value := range k_db_map {
 		value.rwLock = mallocRwLock()
+		k.db.Store(key, value)
 	}
-*/
 	k.BigLock.Unlock()
 }
 
@@ -455,10 +452,8 @@ func handleSubmitStat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go func() {
-		KVStore.Create(stat[0], CURRENT_TIMESTAMP)
-		KVStore.Put(stat[0], CURRENT_TIMESTAMP, value_uint64)
-	}()
+	KVStore.Create(stat[0], CURRENT_TIMESTAMP)
+	KVStore.Put(stat[0], CURRENT_TIMESTAMP, value_uint64)
 	w.WriteHeader(http.StatusNoContent) //GoodRequest
 }
 
