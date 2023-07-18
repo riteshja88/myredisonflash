@@ -484,8 +484,8 @@ func handleGetStat(w http.ResponseWriter, r *http.Request) {
 
 	response := KVStore.GetRange(stat[0], value_start_uint64, value_end_uint64)
 	responseJSON, _ := json.Marshal(response)
-	fmt.Fprintf(w, string(responseJSON))
-	w.WriteHeader(http.StatusNoContent) //GoodRequest
+	fmt.Fprintf(w, string(responseJSON)) //GoodRequest
+	//w.WriteHeader(http.StatusNoContent)
 }
 
 func handleBackup(w http.ResponseWriter, r *http.Request) {
