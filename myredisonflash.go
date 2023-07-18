@@ -447,8 +447,10 @@ func handleSubmitStat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	KVStore.Create(stat[0], CURRENT_TIMESTAMP)
-	KVStore.Put(stat[0], CURRENT_TIMESTAMP, value_uint64)
+	go func() {
+		KVStore.Create(stat[0], CURRENT_TIMESTAMP)
+		KVStore.Put(stat[0], CURRENT_TIMESTAMP, value_uint64)
+	}
 	w.WriteHeader(http.StatusNoContent) //GoodRequest
 }
 
