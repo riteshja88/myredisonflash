@@ -5,7 +5,6 @@ import "encoding/json"
 import "os"
 import "time"
 import "sync"
-import "hash/crc32"
 //import "math/rand"
 import "net/http"
 import "io/ioutil"
@@ -14,13 +13,6 @@ import "strconv"
 import "bufio"
 
 const (
-  // IEEE is by far and away the most common CRC-32 polynomial.
-  // Used by ethernet (IEEE 802.3), v.42, fddi, gzip, zip, png, ...
-  IEEE = 0xedb88320
-)
-
-const (
-	CREATE_MUTEXES = 4096
 	DAYS = 7
 	HOURS = 24
 	SECONDS_IN_HOUR=3600
@@ -36,15 +28,12 @@ type TimeSeriesRecord struct {
 
 type Store struct {
 	BigLock sync.RWMutex
-	crc32_table *crc32.Table
-	//db map[string]*TimeSeriesRecord
 	db sync.Map
 	filename string
 	directoryname string
 	doneStoreExpiredEvictor chan bool
 	doneStoreDiskFlusher chan bool
 	queueStoreDiskFlusher chan string
-	createMutexes[CREATE_MUTEXES] sync.Mutex
 }
 
 func StoreDiskFlusher(k *Store) {
@@ -112,11 +101,9 @@ func StoreExpiredEvictor(k *Store) {
 
 func NewStore(filename string, directoryname string) *Store {
 	store := &Store {
-		//db: map[string]*TimeSeriesRecord{},
 		filename: filename,
 		directoryname: directoryname,
 	}
-	store.crc32_table = crc32.MakeTable(IEEE)
 	return store
 }
 
@@ -176,22 +163,25 @@ func (k *Store) GetRange(key string, startTimestamp uint64, endTimestamp uint64)
 	if curr == nil {
 		return retTimeSeriesResponse
 	}
-	first := curr
 
-	for curr != nil {
-		curr_endTimestampHour := (curr.StartTimestampHour + ((DAYS * HOURS) - 1 ) * SECONDS_IN_HOUR)
-		if endTimestampHour >= curr.StartTimestampHour &&
-			endTimestampHour <= curr_endTimestampHour {
-			break
-		}
-		curr = curr.Next
+	curr_TimestampHour := curr.StartTimestampHour
+
+	Series_idx := 0;
+	for curr_TimestampHour != retTimeSeriesResponse[0].Timestamp /* startTimestampHour */ {
+		Series_idx++
+		curr_TimestampHour += SECONDS_IN_HOUR
 	}
 
-	//last := curr
-
-	curr = first
+	response_idx := 0
 	for curr != nil {
+		curr_endTimestampHour := (curr.StartTimestampHour + ((DAYS * HOURS) - 1 ) * SECONDS_IN_HOUR)
+		for curr_TimestampHour <= curr_endTimestampHour && curr_TimestampHour <= endTimestampHour {
+			retTimeSeriesResponse[response_idx].Value = curr.Series[Series_idx]
+			response_idx++
+			Series_idx++
+		}
 		curr = curr.Next
+		Series_idx = 0
 	}
 
 	return retTimeSeriesResponse
