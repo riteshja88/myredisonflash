@@ -21,7 +21,7 @@ perftest:
 	source a.sh
 
 demo:
-	echo "" > /tmp/data1
+	echo "" > /tmp/data1;mkdir -p /tmp/keys
 	rm -f /tmp/keys/*
 	curl -vv -d'stat=stat1&ts=1679295600&value=1111' 'http://localhost:3333/submitstat'
 	curl -vv -d'stat=stat1&ts=1679900400&value=1234' 'http://localhost:3333/submitstat'
