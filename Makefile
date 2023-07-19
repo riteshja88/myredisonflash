@@ -40,3 +40,6 @@ demo3:
 
 demo4:
 	./demo4.sh
+
+demo5:
+	./histogram.sh
