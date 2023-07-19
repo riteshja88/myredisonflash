@@ -130,6 +130,45 @@ type TimeSeriesResponse struct {
 
 
 func (k *Store) GetRange(key string, startTimestamp uint64, endTimestamp uint64) []TimeSeriesResponse {
+	startTimestampHour := GetEpochTimestampHour(startTimestamp)
+	endTimestampHour := GetEpochTimestampHour(endTimestamp)
+	countHours := ((endTimestampHour-startTimestampHour)/SECONDS_IN_HOUR) + 1
+	retTimeSeriesResponse := make([]TimeSeriesResponse, countHours, countHours)
+	currTimestampHour := startTimestampHour
+	for idx, _ := range retTimeSeriesResponse {
+		retTimeSeriesResponse[idx].Key = &key
+		retTimeSeriesResponse[idx].Timestamp = currTimestampHour
+		currTimestampHour += SECONDS_IN_HOUR
+	}
+
+	timeSeriesRecord := k.Get(key)
+
+	if nil == timeSeriesRecord {
+		return retTimeSeriesResponse /* key not present */
+	}
+
+	if endTimestampHour <= timeSeriesRecord.StartTimestampHour {
+		return retTimeSeriesResponse /* no data for that much past */
+	}
+
+	curr := timeSeriesRecord
+	for curr != nil {
+		currTimeStampHour2 := curr.StartTimestampHour
+		for i := 0; i < len(curr.Series); i++ {
+			if currTimeStampHour2 >= startTimestampHour &&
+				currTimeStampHour2 <= endTimestampHour {
+				ret_idx := (currTimeStampHour2 - startTimestampHour)/SECONDS_IN_HOUR
+				retTimeSeriesResponse[ret_idx].Value = curr.Series[i]
+			}
+			currTimeStampHour2 += SECONDS_IN_HOUR
+		}
+		curr = curr.Next
+	}
+
+	return retTimeSeriesResponse
+}
+
+func (k *Store) GetRange_bkup(key string, startTimestamp uint64, endTimestamp uint64) []TimeSeriesResponse {
 	timeSeriesRecord := k.Get(key)
 	if nil == timeSeriesRecord {
 		return nil /* key not present */

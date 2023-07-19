@@ -31,3 +31,9 @@ demo:
 	cat /tmp/data1|jq -c
 	cat /tmp/keys/stat1|jq -c
 	cat /tmp/keys/stat2|jq -c
+
+
+demo2:
+	curl -vv -d'stat=stat1&start=1679295600&end=1679900400' 'http://localhost:3333/getstat'|jq -c
+demo3:
+	curl -vv -d'stat=stat2&start=1679295600&end=1679900400' 'http://localhost:3333/getstat'|jq -c
