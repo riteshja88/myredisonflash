@@ -426,6 +426,20 @@ func handleSubmitStat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ts := queryParams["ts"]
+	if ts == nil ||
+		len(ts[0]) == 0 {
+		ts = []string{"0"}
+		//w.WriteHeader(http.StatusBadRequest) // BadRequest
+		//return
+	}
+
+	ts_uint64, ts_err := strconv.ParseUint(ts[0], 10, 64)
+	if ts_err != nil {
+		w.WriteHeader(http.StatusBadRequest) // BadRequest
+		return
+	}
+
 	value := queryParams["value"]
 	if value == nil ||
 		len(value[0]) == 0 {
@@ -439,8 +453,8 @@ func handleSubmitStat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	KVStore.Create(stat[0], CURRENT_TIMESTAMP)
-	KVStore.Put(stat[0], CURRENT_TIMESTAMP, value_uint64)
+	KVStore.Create(stat[0], ts_uint64)
+	KVStore.Put(stat[0], ts_uint64, value_uint64)
 	w.WriteHeader(http.StatusNoContent) //GoodRequest
 }
 
@@ -493,13 +507,18 @@ func handleBackup(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent) //GoodRequest
 }
 
+func handleRestore(w http.ResponseWriter, r *http.Request) {
+	KVStore.Restore()
+	w.WriteHeader(http.StatusNoContent) //GoodRequest
+}
+
 var KVStore *Store
 
 func main() {
 	KVStore = NewStore("/tmp/data1","/tmp/keys/") // echo "" > /tmp/data1; mkdir -p "/tmp/keys/";
 	//KVStore.Restore()
 	//KVStore.StartStoreExpiredEvictor()
-	//KVStore.StartStoreDiskFlusher()
+	KVStore.StartStoreDiskFlusher()
 
 	//test(KVStore)
 	//t := KVStore.Get("ritesh2")
@@ -511,6 +530,7 @@ func main() {
 	http.HandleFunc("/submitstat", handleSubmitStat)
 	http.HandleFunc("/getstat", handleGetStat)
 	http.HandleFunc("/backup", handleBackup)
+	http.HandleFunc("/restore", handleRestore)
 	http.ListenAndServe(":3333", nil)
 	//KVStore.StopStoreExpiredEvictor()
 	//KVStore.StopStoreDiskFlusher()
